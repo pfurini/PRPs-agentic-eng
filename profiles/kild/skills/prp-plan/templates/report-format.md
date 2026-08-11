@@ -42,8 +42,18 @@ To start: `git worktree add -b phase-{X} ../project-phase-{X} && cd ../project-p
 **Risks**:
 - {Primary risk}: {mitigation}
 
+**Decisions & Questionables**:
+- Confirmed at checkpoint: {N} — {one line per user-confirmed decision, or "none needed"}
+- Planner defaults (disclosed): {N} — {one line each, or "none"}
+- **`[DECISION REQUIRED]` (unresolved)**: {N} — {one line each, or "none"}
+
 **Confidence Score**: {1-10}/10 for one-pass implementation success
 - {Rationale for score}
 
+{If NO [DECISION REQUIRED] items remain:}
 **Next Step**: To execute, use the prp-implement skill {expanded absolute path to $PRP_DIR/plans/{feature-name}.plan.md}
+
+{If any [DECISION REQUIRED] items remain:}
+**Status**: ⚠️ DRAFT — {N} decision(s) required before implementation. Do NOT run `the prp-implement skill` yet.
+**Next Step**: Decide the items above, then run `the prp-plan skill` to revise the plan with your answers (paste the plan path and your decisions).
 ```

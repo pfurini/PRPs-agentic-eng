@@ -236,6 +236,32 @@ NOT_BUILDING (explicit scope limits):
 
 ---
 
+## Phase 5.5: CONFIRM - Decision Checkpoint
+
+Phases 2-5 discover ambiguities the Phase 1 gate could not see. Before generating the plan, collect every assumption made so far that is NOT directly settled by the source requirements (PRD, issue, ADRs) or by verified codebase facts, and classify each:
+
+| Class | Criteria | Action |
+|-------|----------|--------|
+| **decision-required** | Public API/wire-contract shape; scope or phase placement; behavior change or compatibility break; security/isolation policy interpretation; expensive or hard-to-reverse choices | Must be confirmed by the user before the plan is implementation-ready |
+| **planner-default** | Reversible implementation detail with a clear, evidence-backed default | Decide it; disclose it under Questionables — no prompt |
+
+**If decision-required items exist, batch them into ONE interaction** — never drip questions one at a time. Present each item with the assumption taken, the rationale, and the alternatives. Then:
+
+- **Answered** → record the decision with provenance ("confirmed by user") in the Phase 5 decision documentation (APPROACH_CHOSEN / NOT_BUILDING as appropriate). Confirmed items do NOT appear under Questionables.
+- **User defers or cannot answer** → the item stays under Questionables prefixed `[DECISION REQUIRED]`, and the plan is a **DRAFT** (see Phase 6 and the report).
+
+**Non-interactive runs** (headless pipeline, no user available): do not guess. Keep every decision-required item under Questionables prefixed `[DECISION REQUIRED]`, generate the plan as a DRAFT, and end the final reply with the sentinel line `PLAN: BLOCKED` followed by the open items. When there are no decision-required items, end with `PLAN: READY`.
+
+If the input fully settles behavior and placement (e.g. an explicit PRD decision), ask nothing — a redundant question is a defect too.
+
+**PHASE_5_5_CHECKPOINT:**
+
+- [ ] All post-Phase-1 assumptions collected and classified
+- [ ] Decision-required items either confirmed (with provenance) or marked `[DECISION REQUIRED]`
+- [ ] No question asked that the source input already answers
+
+---
+
 ## Phase 6: GENERATE - Implementation Plan File
 
 ```bash
@@ -288,6 +314,7 @@ Create directory if needed: `mkdir -p "$PRP_DIR/plans"`
 - [ ] Each task is atomic and independently testable
 - [ ] No placeholders - all content is specific and actionable
 - [ ] Pattern references include actual code snippets (copy-pasted, not invented)
+- [ ] No `[DECISION REQUIRED]` items remain under Questionables (Phase 5.5) — if any do, the plan is a DRAFT, not implementation-ready
 
 **PATTERN_FAITHFULNESS:**
 
@@ -314,7 +341,8 @@ Create directory if needed: `mkdir -p "$PRP_DIR/plans"`
 
 <success_criteria>
 **CONTEXT_COMPLETE**: All patterns, gotchas, integration points documented from actual codebase via `prp-core:codebase-explorer` and `prp-core:codebase-analyst` agents
-**IMPLEMENTATION_READY**: Tasks executable top-to-bottom without questions, research, or clarification
+**IMPLEMENTATION_READY**: Tasks executable top-to-bottom without questions, research, or clarification — and no `[DECISION REQUIRED]` Questionables (a plan carrying them is a DRAFT and must be reported as such)
+**DECISIONS_CONFIRMED**: Every consequential post-Phase-1 assumption was either confirmed by the user (Phase 5.5) or is explicitly marked `[DECISION REQUIRED]` in a DRAFT plan — never silently finalized
 **PATTERN_FAITHFUL**: Every new file mirrors existing codebase style exactly
 **VALIDATION_DEFINED**: Every task has executable verification command
 **UX_DOCUMENTED**: Before/After transformation is visually clear with data flows

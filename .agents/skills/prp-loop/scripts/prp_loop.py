@@ -105,6 +105,7 @@ REVIEW_DIR = PRP_DIR / "state"
 LEGACY_STATE_FILE = ROOT / ".claude" / "prp-loop.state.json"
 
 GREEN = "VALIDATION: GREEN"
+PLAN_BLOCKED = "PLAN: BLOCKED"  # plan stage found decision-required assumptions (draft plan)
 PROTECTED_BRANCHES = {"main", "master", "development", "develop"}
 STAGE_TIMEOUT = 3600  # seconds per agent stage
 CLI = "claude"  # which headless CLI drives the stages; set in main(), persisted in state
@@ -316,12 +317,42 @@ def implement_until_green(state: dict, initial_prompt: str, label: str) -> bool:
 # ---------- stages ----------
 def stage_plan(state: dict) -> None:
     log("STAGE plan")
+    # Re-entry after a PLAN_BLOCKED halt: the user was told to resolve the draft's
+    # [DECISION REQUIRED] items and --resume. Check the plan file itself (authoritative)
+    # instead of re-planning from scratch.
+    prior = state.get("artifacts", {}).get("plan_path")
+    history = state.get("history", [])
+    last_plan = next((h for h in reversed(history) if h["stage"] == "plan"), None)
+    if prior and Path(prior).exists() and last_plan and last_plan["result"] == "blocked":
+        if "[DECISION REQUIRED]" in Path(prior).read_text():
+            halt(state, (
+                f"plan at {prior} still contains [DECISION REQUIRED] Questionables. "
+                f"Decide them, revise the plan (prp-plan), then re-run with --resume."
+            ))
+        record(state, "plan", "ok (draft resolved)")
+        state["stage"] = "implement"
+        save_state(state)
+        log(f"plan draft resolved -> {prior}")
+        return
     before = plan_snapshot()
-    run_agent(f"Use the prp-plan skill to create an implementation plan for: {state['feature']}")
+    result = run_agent(
+        f"Use the prp-plan skill to create an implementation plan for: {state['feature']}. "
+        f"This is a non-interactive run: at the skill's decision checkpoint, do not guess on "
+        f"decision-required assumptions — save the plan as a DRAFT with them marked "
+        f"[DECISION REQUIRED] and end your reply with the line '{PLAN_BLOCKED}' followed by "
+        f"the open items. If there are none, end with 'PLAN: READY'."
+    )
     plan = newest_plan(before)
     if not plan:
         halt(state, f"plan stage produced no new .plan.md under {PLANS_DIR}/")
     state["artifacts"]["plan_path"] = plan
+    if PLAN_BLOCKED in result:
+        record(state, "plan", "blocked")
+        halt(state, (
+            f"plan is a DRAFT blocked on decision-required assumptions — see the "
+            f"[DECISION REQUIRED] Questionables in {plan}. Decide them, revise the plan "
+            f"(prp-plan), then re-run with --resume."
+        ))
     record(state, "plan", "ok")
     state["stage"] = "implement"
     save_state(state)

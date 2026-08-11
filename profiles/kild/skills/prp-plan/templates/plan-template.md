@@ -291,7 +291,7 @@ Use Browser MCP to verify:
 
 ## Questionables
 
-_Include this section whenever a decision was assumed rather than certain (and whenever the confidence score is below 8). Surface open decisions here instead of silently deciding — one collapsible entry per open question, with the assumption you took so a human can confirm or correct it._
+_Include this section whenever a decision was assumed rather than certain (and whenever the confidence score is below 8). Surface open decisions here instead of silently deciding — one collapsible entry per open question, with the assumption you took so a human can confirm or correct it. Two kinds of entries live here: **planner-defaults** (reversible details decided with evidence — disclosure only) and **`[DECISION REQUIRED]`** items (consequential decisions the user has not yet confirmed — prefix the summary line). Decisions the user confirmed at the Phase 5.5 checkpoint do NOT appear here; they are recorded in the plan's decision documentation with provenance. A plan with any `[DECISION REQUIRED]` entry is a DRAFT: resolving those entries (via a `the prp-plan skill` revision after the user decides) is what clears the draft state._
 
 <details>
 <summary>{Open question / assumption / risk}</summary>
