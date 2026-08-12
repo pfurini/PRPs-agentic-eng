@@ -23,3 +23,5 @@ wheels/
 # Other tools drop their own skills here; they are not ours to track.
 .agents/skills/*
 !.agents/skills/prp-*
+
+.pi/tasks/
