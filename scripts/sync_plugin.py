@@ -4,22 +4,28 @@
 Targets:
 
 1. plugins/prp-core/ — the Claude Code plugin.
-   - skills/  <- .claude/skills/, verbatim except SKILL.md launcher paths in
+   - skills/  <- active skills under .claude/skills/, excluding manual
+     experiments named in IN_PROCESS_SKILLS,
+     verbatim except SKILL.md launcher paths in
      LAUNCHER_REWRITES (scripts invoked from a .claude/ path locally) are
      rewritten to their ${CLAUDE_PLUGIN_ROOT} form
    - agents/  <- .claude/agents/, minus EXCLUDED_AGENTS
    Everything else under plugins/prp-core/ (.claude-plugin/, hooks/, README.md)
    is plugin-only and never touched.
 
-2. .agents/skills/ — the OpenAI Codex CLI render. Codex auto-discovers a repo's
-   .agents/skills; for user-level use, SYMLINK rather than copy:
-       ln -s <repo>/.agents/skills ~/.agents/skills
-   A symlink stays current on every sync; a copy silently goes stale. Two
-   consequences of the symlink, both load-bearing: ~/.agents/skills IS this
-   repo's directory, so a globally-installed Codex skill lands inside the git
-   repo (see the .gitignore rule), and the stale prune below deletes anything
-   here not generated from .claude/skills. Keep ~/.agents/skills exclusively
-   prp's — route other skills through ~/.codex/skills instead.
+2. .agents/skills/ — the render Codex consumes. NOTE the discovery path: Codex
+   reads $CODEX_HOME/skills (~/.codex/skills when CODEX_HOME is unset). It does
+   NOT read ~/.agents/skills — in Codex, .agents/ is the *plugin* location
+   (~/.agents/plugins/marketplace.json). Verified against codex-cli 0.147.0.
+   For user-level use, symlink each rendered skill into the discovery dir; a
+   symlink tracks every sync, a copy silently goes stale:
+       for d in <repo>/.agents/skills/prp-*; do
+         ln -s "$d" ~/.codex/skills/"$(basename "$d")"
+       done
+   Per-skill rather than linking the whole directory, because ~/.codex/skills
+   is shared with every other Codex skill the user installs. That sharing cuts
+   both ways: the stale prune below deletes anything in .agents/skills that
+   .claude/skills did not generate, so nothing foreign should be parked there.
    Skills from .claude/skills/ minus CODEX_EXCLUDED_SKILLS, with Claude-isms
    rewritten (CODEX_REWRITES): Task-tool subagent dispatch -> explicit
    "spawn the X subagent" delegation, prp-core: namespace dropped (Codex agent
@@ -30,13 +36,6 @@ Targets:
    converted from .claude/agents/*.md (frontmatter name/description; body ->
    developer_instructions), minus EXCLUDED_AGENTS. Symlink for user-level use
    the same way: ln -s <repo>/.codex/agents ~/.codex/agents
-
-4. profiles/kild/skills/ — the kild-lane profile (primitives-audit slice 7):
-   only KILD_INCLUDED_SKILLS, each with a lane preamble that overrides
-   driver-owning steps (branches, worktrees, push/PR, artifact archival) and
-   pi-lane rewrites (inline analysis instead of Task-tool subagents, bare
-   agent names, no slash mentions). Deliberately outside .agents/ so it is
-   never discovered — the kild engine assigns it to sessions explicitly.
 
 The prp-research-team Stop hook is deliberately NOT ported: prp-research-team
 is Claude-only (agent teams), so the hook has nothing to validate in Codex.
@@ -57,6 +56,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC_SKILLS = ROOT / ".claude" / "skills"
 SRC_AGENTS = ROOT / ".claude" / "agents"
 
+# Manual experiments remain top-level so Claude Code can discover explicit
+# invocations, but are deliberately absent from every generated target.
+IN_PROCESS_SKILLS = {"prp-deliver"}
+
 PRP_RESOLVER_BLOCK = """# --- PRP store resolver (canonical; keep byte-identical across skills) ---
 _gd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
 case "$_gd" in */.git) _root="${_gd%/.git}" ;; "") _root="$PWD" ;; *) _root="$_gd" ;; esac
@@ -72,16 +75,13 @@ PLUGIN_SKILLS = Path("plugins/prp-core/skills")
 PLUGIN_AGENTS = Path("plugins/prp-core/agents")
 CODEX_SKILLS = Path(".agents/skills")
 CODEX_AGENTS = Path(".codex/agents")
-# Deliberately NOT under .agents/ — the kild profile must never be discovered;
-# the kild engine hands it to sessions explicitly (ResourceLoader).
-KILD_SKILLS = Path("profiles/kild/skills")
 
 EXCLUDED_AGENTS = {"gpui-researcher.md"}  # personal, not part of the pack
 
 # Claude-harness-specific skills that have no meaningful Codex render (yet):
 # prp-orchestrate and prp-meta-skill ARE rendered — orchestrate's delegation
-# mechanics rewrite to harness-agnostic language (kild rooms / subagents /
-# headless fallback), and meta-skill's authored-skill paths map to the local
+# mechanics rewrite to harness-agnostic delegation language,
+# and meta-skill's authored-skill paths map to the local
 # discovery dir (.agents/skills).
 CODEX_EXCLUDED_SKILLS = {
     "prp-research-team",  # targets Claude Code's experimental agent-teams feature
@@ -155,25 +155,30 @@ CODEX_REWRITES: list[tuple[re.Pattern, object]] = [
 ]
 
 # Per-skill extras, applied after the global list.
+# Which per-skill rewrites actually matched something this run. A rewrite that
+# never fires is obsolete or mistyped, and until it is reported it fails silently:
+# the Claude-ism it was written to remove simply survives into the Codex render.
+# That is how `run_in_background` and an `isolation: "worktree"` spawn parameter —
+# neither of which exists on Codex — reached the rendered orchestrate skill.
+FIRED_REWRITES: set[tuple[str, str]] = set()
+
 CODEX_SKILL_REWRITES: dict[str, list[tuple[re.Pattern, str]]] = {
     "prp-loop": [
         (re.compile(r'prp_loop\.py "\$ARGUMENTS"'), 'prp_loop.py "$ARGUMENTS" --cli codex'),
         (re.compile(r"prp_loop\.py --resume"), "prp_loop.py --resume --cli codex"),
     ],
     # Orchestrate is written against Claude Code's native agent tools; render the
-    # mechanics harness-agnostic (kild rooms / subagents / headless fallback) while
+    # mechanics harness-agnostic while
     # keeping the discipline (decompose, gate, verify, merge) verbatim.
     "prp-orchestrate": [
-        (re.compile(r"launch and steer agents with the native agent tools"),
-         "launch and steer background agents with your harness's delegation tools"),
         (re.compile(
-            r"\*\*Drive everything through the native agent tools\*\* — spawn with "
+            r"\*\*Drive workstreams through the native agent tools\*\* — spawn with "
             r"your delegation tool \(background, worktree isolation\), steer and continue "
-            r"with SendMessage, stop with the task-stop tool, check with the "
+            r"with SendMessage, stop with the task-stop tool, and check with the "
             r"task-list/status tools\."),
-         "**Drive everything through your harness's delegation tools** — spawn background "
-         "workstream agents in isolated worktrees (kild rooms via the kild_* tools, or "
-         "your subagent mechanism), steer a running agent by sending it a follow-up "
+         "**Drive workstreams through your harness's delegation tools** — spawn background "
+         "workstream agents in isolated workspaces through your subagent mechanism, "
+         "steer a running agent by sending it a follow-up "
          "message, stop it and check status with the matching controls."),
         (re.compile(r"via SendMessage with the answer"), "via a follow-up message with the answer"),
         (re.compile(r"SendMessage the decision back to the same agent"),
@@ -194,11 +199,29 @@ CODEX_SKILL_REWRITES: dict[str, list[tuple[re.Pattern, str]]] = {
          "the handle for messaging, stopping, and status checks"),
         (re.compile(r"\*\*Steer / continue\*\*: SendMessage to the agent ID"),
          "**Steer / continue**: send a message to the agent ID"),
-        (re.compile(r"no SendMessage \(course-correct"), "no live steering (course-correct"),
         (re.compile(r"agent-tool call shapes, the workstream prompt template, SendMessage/stop/status patterns"),
          "launch call shapes, the workstream prompt template, steering/stop/status patterns"),
-        (re.compile(r"one agent, `run_in_background` \(the default\), \*\*`isolation: \"worktree\"`\*\*"),
-         "one background agent with **worktree isolation**"),
+        # Isolation is a spawn *parameter* on Claude Code and does not exist as one
+        # elsewhere; on other harnesses the checkout has to be made before the spawn.
+        (re.compile(r"\*\*`isolation: \"worktree\"` is the default\.\*\* Spawn every workstream that "
+                    r"touches the working tree into its own checkout"),
+         "**Isolation is the default, and here it is explicit.** Your spawn tool has no isolation "
+         "parameter, so create the checkout first — use the prp-worktree skill to create the "
+         "workstream's branch, then pass the agent its absolute path and tell it to work there. "
+         "Every workstream that touches the working tree gets one"),
+        (re.compile(r"one agent, `run_in_background` \(the default\), worktree-isolated\."),
+         "one background agent in its own pre-created worktree."),
+        # No harness-managed worktrees here: everything was created explicitly, so
+        # everything needs explicit teardown. The Claude text says the opposite.
+        (re.compile(r"A worktree under `\.worktrees/` was created by the prp-worktree skill and "
+                    r"needs explicit teardown; anything else is the agent tool's and cleans up "
+                    r"after itself\."),
+         "Every worktree here was created explicitly, so every one needs explicit teardown — "
+         "nothing is reclaimed for you."),
+        (re.compile(r"Agent-tool worktrees are auto-removed when their owner is released and the "
+                    r"checkout is unchanged; verify rather than assume\. For worktrees created "
+                    r"via `prp-worktree`, use the same skill to remove the checkout"),
+         "No worktree here is auto-removed; use `prp-worktree` to remove the checkout"),
         (re.compile(r"\*\*Stop\*\*: the task-stop tool against the workstream's task\."),
          "**Stop**: your harness's stop control against the workstream's agent."),
         (re.compile(r"\*\*Status\*\*: the task-list/status tools give live agent state"),
@@ -206,11 +229,6 @@ CODEX_SKILL_REWRITES: dict[str, list[tuple[re.Pattern, str]]] = {
         (re.compile(r"wire project hooks on the relevant events \(e\.g\. SubagentStop\) in `\.claude/settings\.json`"),
          "wire hooks on the relevant agent-stop events if your harness supports them"),
         (re.compile(r" — consult the current Claude Code hooks docs for event names and payloads\."), "."),
-        (re.compile(r'nohup claude -p "<workstream prompt>" \\\n  --dangerously-skip-permissions --output-format stream-json --verbose \\\n'),
-         'nohup codex exec --dangerously-bypass-approvals-and-sandbox "<workstream prompt>" \\\n'),
-        (re.compile(r"Agent-tool worktrees are auto-removed when unchanged"),
-         "Harness-managed worktrees may be auto-removed when unchanged"),
-        (re.compile(r"An agent-tool worktree holds"), "An agent worktree holds"),
     ],
     # Meta-skill: only its meta-documentation of Claude-only mechanics needs a touch;
     # authored-skill paths are handled by the global .claude/skills -> .agents/skills map.
@@ -227,85 +245,6 @@ CODEX_FORBIDDEN = (
     "SendMessage",
 )
 
-# ---------- kild-lane profile (audit slice 7) ----------
-# The kild engine assigns this skill set to room sessions via an explicit
-# ResourceLoader — the driver grants capabilities; nothing here is discovered.
-# Driver-owning skills (worktrees, branches, push/PR, orchestration loops) are
-# structurally absent; the included skills get a lane preamble that overrides
-# their driver-owning steps until true process-primitive variants exist.
-
-KILD_INCLUDED_SKILLS = {
-    "prp-commit",             # rooms end committed — commit is in-lane
-    "prp-debug",
-    "prp-codebase-question",
-    "prp-prd",
-    "prp-plan",               # writes plan artifacts only
-    "prp-implement",          # lane note strips branch/push/archive behavior
-    "prp-review",             # lane note forbids gh pr checkout
-}
-
-KILD_LANE_NOTE = (
-    "> **Kild lane:** you are running inside a kild room, in a workspace "
-    "(worktree + branch) the kild engine assigned. The driver owns isolation and "
-    "publishing — SKIP any step below that creates or switches branches or "
-    "worktrees, pulls or rebases the base branch, pushes, opens PRs, or "
-    "moves/archives plan artifacts, and never run `gh pr checkout`. Your job ends "
-    "at implement → validate → commit in the current workspace, reporting "
-    "evidence. Where a step spawns subagents, do that analysis inline — or ask "
-    "the room's orchestrator to invite a helper agent.\n"
-)
-
-
-def _inline(m: re.Match) -> str:
-    verb = "Do" if m.group(1) == "U" else "do"
-    return f"{verb} the `{m.group(2)}` analysis below inline (kild lane: no subagents)"
-
-
-# Applied in order to every rendered kild-profile markdown file.
-KILD_REWRITES: list[tuple[re.Pattern, object]] = [
-    # Task-tool subagent dispatch -> inline execution in the room worker
-    (re.compile(r'([Uu])se Task tool with `subagent_type="prp-core:([a-z-]+)"`'), _inline),
-    (re.compile(r'\(subagent_type="prp-core:([a-z-]+)"\)'), r"(the `\1` analysis, done inline)"),
-    (re.compile(r"[Ll]aunch (two|three|the) specialized agents in parallel using multiple Task tool calls in a single message"),
-     r"Work through the \1 specialized analyses inline, one after another"),
-    (re.compile(r"using multiple Task tool calls in a single message"),
-     "by working through them inline, one after another"),
-    (re.compile(r"in a \*\*single message with multiple Task tool calls\*\*"),
-     "**inline, one after another**"),
-    (re.compile(r"in a \*\*single message with two Task tool calls\*\*"),
-     "**inline, one after the other**"),
-    (re.compile(r"When launching each agent via Task tool:"), "For each analysis, inline:"),
-    (re.compile(r"using Task tool subagents"), "inline"),
-    # Skill-tool dispatch -> named skill (must precede the prp-core: strip)
-    (re.compile(r'Skill tool, `skill: "prp-core:([a-z-]+)"`, `args: "([^"]*)"`\.'),
-     r"Use the `\1` skill with arguments `\2`."),
-    # pi/kild agent names are bare
-    (re.compile(r"prp-core:"), ""),
-    # pi loads AGENTS.md and CLAUDE.md natively as context files
-    (re.compile(r"CLAUDE\.md rules: @CLAUDE\.md"),
-     "Project rules: your loaded context files (AGENTS.md / CLAUDE.md) apply."),
-    # pi has no slash-skill mention in prose; name the skill instead
-    (re.compile(r"run: `/prp-([a-z-]+)( [^`]*)?`"), r"use the prp-\1 skill\2"),
-    (re.compile(r"(?<![\w/])/prp-([a-z-]+)"), r"the prp-\1 skill"),
-]
-
-KILD_FORBIDDEN = CODEX_FORBIDDEN
-
-
-def kild_render_md(text: str, skill: str, src: Path) -> str:
-    text = re.sub(r"^argument-hint:[^\n]*\n", "", text, flags=re.M)
-    for pattern, repl in KILD_REWRITES:
-        text = pattern.sub(repl, text)
-    notes = KILD_LANE_NOTE
-    if re.search(r"\$ARGUMENTS|\$\d", text):
-        notes += "\n" + ARGS_NOTE
-    text = _inject_after_frontmatter(text, notes)
-    for token in KILD_FORBIDDEN:
-        if token in text:
-            sys.exit(f"kild render of {src}: forbidden Claude-ism '{token}' survived the rewrite")
-    return text
-
-
 def _inject_after_frontmatter(text: str, note: str) -> str:
     if text.startswith("---"):
         end = text.index("\n---\n", 3) + len("\n---\n")
@@ -320,6 +259,8 @@ def codex_render_md(text: str, skill: str, src: Path) -> str:
     for pattern, repl in CODEX_REWRITES:
         text = pattern.sub(repl, text)
     for pattern, repl in CODEX_SKILL_REWRITES.get(skill, []):
+        if pattern.search(text):
+            FIRED_REWRITES.add((skill, pattern.pattern))
         text = pattern.sub(repl, text)
     # Claude substitutes $ARGUMENTS at invocation; Codex has no templating, so
     # tell the model what the placeholder means.
@@ -370,11 +311,18 @@ def _walk(base: Path) -> list[Path]:
     )
 
 
+def _active_skill_files() -> list[Path]:
+    return [
+        src for src in _walk(SRC_SKILLS)
+        if src.relative_to(SRC_SKILLS).parts[0] not in IN_PROCESS_SKILLS
+    ]
+
+
 def expected_files() -> dict[Path, bytes]:
     """Map of repo-relative path -> expected content, across all targets."""
     expected: dict[Path, bytes] = {}
 
-    for src in _walk(SRC_SKILLS):
+    for src in _active_skill_files():
         if src.suffix != ".md":
             continue
         text = src.read_text()
@@ -382,7 +330,7 @@ def expected_files() -> dict[Path, bytes]:
             sys.exit(f"{src}: PRP store resolver differs from the canonical block")
 
     # 1. Claude Code plugin
-    for src in _walk(SRC_SKILLS):
+    for src in _active_skill_files():
         rel = src.relative_to(SRC_SKILLS)
         skill = rel.parts[0]
         content = src.read_bytes()
@@ -399,7 +347,7 @@ def expected_files() -> dict[Path, bytes]:
         expected[PLUGIN_AGENTS / src.relative_to(SRC_AGENTS)] = src.read_bytes()
 
     # 2. Codex skills render
-    for src in _walk(SRC_SKILLS):
+    for src in _active_skill_files():
         rel = src.relative_to(SRC_SKILLS)
         skill = rel.parts[0]
         if skill in CODEX_EXCLUDED_SKILLS:
@@ -421,23 +369,12 @@ def expected_files() -> dict[Path, bytes]:
             continue
         expected[CODEX_AGENTS / (src.stem + ".toml")] = agent_md_to_toml(src)
 
-    # 4. kild-lane profile (handed to sessions by the kild engine, never discovered)
-    for src in _walk(SRC_SKILLS):
-        rel = src.relative_to(SRC_SKILLS)
-        skill = rel.parts[0]
-        if skill not in KILD_INCLUDED_SKILLS:
-            continue
-        if src.suffix == ".md":
-            expected[KILD_SKILLS / rel] = kild_render_md(src.read_text(), skill, src).encode()
-        else:
-            expected[KILD_SKILLS / rel] = src.read_bytes()
-
     return expected
 
 
 def actual_files() -> dict[Path, bytes]:
     actual: dict[Path, bytes] = {}
-    for base_rel in (PLUGIN_SKILLS, PLUGIN_AGENTS, CODEX_SKILLS, CODEX_AGENTS, KILD_SKILLS):
+    for base_rel in (PLUGIN_SKILLS, PLUGIN_AGENTS, CODEX_SKILLS, CODEX_AGENTS):
         base = ROOT / base_rel
         if base.exists():
             for p in _walk(base):
@@ -466,6 +403,20 @@ def main() -> None:
     missing = sorted(set(expected) - set(actual))
     changed = sorted(r for r in set(expected) & set(actual) if expected[r] != actual[r])
 
+    dead = [
+        (skill, pat.pattern)
+        for skill, rules in CODEX_SKILL_REWRITES.items()
+        for pat, _ in rules
+        if (skill, pat.pattern) not in FIRED_REWRITES
+    ]
+    for skill, pattern in dead:
+        print(f"dead rewrite ({skill}): {pattern[:90]}")
+    if dead:
+        print(
+            f"{len(dead)} Codex rewrite(s) matched nothing — the source moved under them, so "
+            "whatever each was written to remove is now in the render verbatim. Fix or delete."
+        )
+
     if args.check:
         for rel in missing:
             print(f"missing: {rel}")
@@ -473,7 +424,7 @@ def main() -> None:
             print(f"stale (not in source): {rel}")
         for rel in changed:
             print(f"differs: {rel}")
-        if missing or stale or changed:
+        if missing or stale or changed or dead:
             sys.exit("targets are out of sync — run: python3 scripts/sync_plugin.py")
         print("all targets in sync")
         return

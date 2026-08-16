@@ -1,68 +1,60 @@
 ---
 name: prp-issue
-description: Investigate a GitHub issue and implement the fix - analyze codebase, create a plan, then code, PR, review by the review agents, and act on their findings. Use when the user wants to investigate or triage a GitHub issue or bug report, fix an investigated issue, implement an issue fix, run the full cycle on an issue end to end, or invokes $prp-issue.
+description: Autonomously owns one workstream from an issue, PRD, document, existing plan, or free-form request through planning, implementation, pull request, independent review, corrections, and green CI. Always use when the user asks to implement or ship work end to end, take an issue or idea to a reviewed PR, run plan to PR, invokes $prp-issue, or when prp-orchestrate needs an end-to-end delivery engine.
 ---
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
-# PRP Issue
+# Deliver One Workstream
 
-**Input**: $ARGUMENTS
+Own planning through PR and every correction in this context. Preserve accumulated reasoning across that implementation lifecycle; use fresh contexts only where independence is the feature—review.
 
-```bash
-# --- PRP store resolver (canonical; keep byte-identical across skills) ---
-_gd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-case "$_gd" in */.git) _root="${_gd%/.git}" ;; "") _root="$PWD" ;; *) _root="$_gd" ;; esac
-_root="$(cd "$_root" && pwd -P)"
-_name="$(basename "$_root" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
-PRP_DIR="${PRP_HOME:-$HOME/.prp}/${_name:-project}-$(printf %s "$_root" | git hash-object --stdin | cut -c1-8)"
-mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "name": "%s"}\n' "$_root" "${_name:-project}" > "$PRP_DIR/project.json"
-```
+**Input**: $ARGUMENTS (if absent, use the conversation).
 
-Two-phase issue workflow: **investigate** an issue into an implementation artifact, then **fix** it from that artifact (code, PR, agent review, act on findings). `full` runs both in one pass.
+## Contract
 
----
+- Continue autonomously through plan, implementation, PR, review, correction, re-review, and CI.
+- Compose `$prp-plan`, `$prp-implement`, and `$prp-review`; do not reproduce their craft.
+- Keep the plan, implementation report, PR, review report, publication URL, validation, and CI as the workstream's proof. Never reduce a handoff to a private summary.
+- Stop only for a product decision, missing prerequisite primitive, inaccessible dependency, permission boundary, or repeated no-progress failure that cannot be resolved in this context.
+- Do not merge. The caller or outer orchestrator owns that gate.
 
-## Route on the verb
+## 1. Resolve and plan in this context
 
-Read the first token of `$ARGUMENTS` to choose the workflow. Everything after the verb is the issue/artifact argument the workflow operates on.
+Accept an issue or tracker URL, PRD, document, existing `.plan.md`, free-form request, conversation context, or reviewed PR.
 
-| First token | Workflow | Operates on |
-|-------------|----------|-------------|
-| `investigate` | `workflows/investigate.md` | issue number / URL / free-form description |
-| `fix` | `workflows/fix.md` | issue number / artifact path (`+ optional --base <branch>`) |
-| `full` — and every equivalent: `all`, `everything`, `end to end`, `investigate and fix`, `investigate then fix`, `fix it too`, `ship it` | `workflows/investigate.md`, **then** `workflows/fix.md` | the issue; the artifact the first phase writes is the second phase's input |
-| _no verb_ (a bare issue number, URL, or description) | `workflows/investigate.md` | the whole argument — investigation is the entry point; you investigate before you fix |
+- Review-only request or contributor PR: use `$prp-review` and stop.
+- Existing plan: use it; publish it first with `$prp-plan publish <path>` when issue-derived publication is missing.
+- Issue with a published plan: let `$prp-implement` resolve and persist its absolute path from source metadata.
+- Existing reviewed PR: resolve its plan and implementation report, then resume correction or verification without repeating completed work.
+- Every other input: invoke `$prp-plan` now in this context. Keep its reasoning available for implementation.
 
-**Action**: strip the verb(s), then follow each matching workflow file end-to-end, in the order above.
+Require the absolute plan path and, for issue-derived plans, the verified publication URL before review.
 
-### Where a run is allowed to stop
+## 2. Implement through PR in this context
 
-Two routes end early, and they are the only two:
+Invoke `$prp-implement` with the plan path—or source issue when resolving a published plan—and any explicit base. Keep ownership in this context through validation, scoped commit, PR creation, linked PRD updates, and the implementation report.
 
-- **`investigate`**, or a bare issue with no verb — ends at the artifact.
-- **`fix`** — starts from the artifact an earlier investigation already wrote.
+Do not start review without `VALIDATION: GREEN`, the absolute plan and report paths, and a live PR.
 
-Every other invocation runs the full cycle: investigate → implement → validate → commit → PR →
-review by the review agents → findings posted → the worthwhile ones fixed → committed and pushed.
-The verb list above is illustrative, not exhaustive; when the wording does not plainly limit you to
-one of the two early-stopping routes, run the full cycle.
+## 3. Review in a fresh context
 
-**Read the workflow file for every phase you run — including the second one.** Both phases asked for
-means both files read. Finishing an investigation leaves you holding a plan and feeling ready to
-implement it, and implementing from that feeling is the failure this line exists to stop: `fix.md`
-carries the branch discipline, the validation gate, the PR, the agent review and the archive, and an
-agent that never opened it silently does none of them. It has happened.
+Start a fresh agent with this prompt:
 
-**Do not blend them.** Sequential, each run to its end — not interleaved, and not one phase
-improvising the other's steps from memory.
+> Invoke `$prp-review` on `<PR URL or number>` with scopes `<requested scopes, if any>`. Applicable caller decisions and scope constraints, verbatim: `<decisions or "None">`. Read the linked plan and implementation report, publish the complete review to GitHub, and return the verdict, canonical review-report path, verified publication URL, and any blocker. Do not modify the PR.
 
----
+Require the complete canonical review report and verified GitHub publication.
 
-## Notes
+## 4. Disposition findings and re-review
 
-- `investigate` is read-mostly: it analyzes, writes an artifact under `$PRP_DIR/issues/`, and (for GitHub issues) posts a comment.
-- `fix` is **side-effecting**: it creates a branch, commits, opens a PR, has the review agents review it, and pushes fixes for what they find. Only run it once an investigation artifact exists.
-- `full` is both, back to back, in one run — no stop between the artifact and the branch.
-- Staged flow, to read the plan before any code is written: `prp-issue investigate <number>` → read the artifact → `prp-issue fix <number>`.
-- One-shot flow: `prp-issue full <number>`.
+Read the complete report in this implementation context. Fix Critical or Important findings that are correct and material to the requested outcome. Record concrete evidence when a finding is false, already satisfied, conflicts with an explicit decision, or belongs outside the agreed invariant. Treat Suggestions as optional; adopt one only when it clearly improves this delivery without widening scope or risk.
+
+Invoke `$prp-implement` in review-correction mode in this same context. After every correction or evidence-backed disagreement, start a fresh `$prp-review` agent against the current PR head. Repeat until the independent verdict is `READY TO MERGE`. Resolve `REVIEW INCOMPLETE` by obtaining its missing validation or evidence; stop only when that is genuinely unavailable.
+
+## 5. Require green CI
+
+After `READY TO MERGE`, wait for every required CI check. A pending check is not green. For a PR-caused failure, invoke `$prp-implement` in CI-correction mode with the PR and complete failing-check evidence in this context, then run a fresh review against the changed head. When no required CI exists, rerun the repository's authoritative local gate and record it instead.
+
+## 6. Return proof and follow-ups
+
+Only after review and CI are green, return the outcome, absolute plan and implementation-report paths, PR URL, latest review verdict, review-report path, publication URL, validation, and CI evidence. Then suggest only meaningful remaining non-blocking follow-ups, including already-created tracking issues; do not present required unfinished work as optional follow-up.
