@@ -1,6 +1,6 @@
 # Attack Briefs — exact prompts per angle
 
-One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (absolute), `{PRD_PATH}` (absolute, traceability only), `{PHASE_ROW}` (the PRD Implementation Phases row that links to this plan, e.g. `Phase 3: Export pipeline`, or `the whole PRD` when the plan maps to no single phase). Dispatch each brief to one `plan-reviewer` agent. Do not reword the briefs; they encode the checks.
+One brief per angle. Fill every `{placeholder}` before dispatch: `{PLAN_PATH}` (absolute), `{PRD_PATH}` (absolute, traceability only), `{PHASE_ROW}` (the PRD Implementation Phases row that links to this plan, e.g. `Phase 3: Export pipeline`, or `the whole PRD` when the plan maps to no single phase). Dispatch each brief to one `prp-core:plan-reviewer` agent. Do not reword the briefs; they encode the checks.
 
 ## traceability
 

@@ -6,7 +6,7 @@ argument-hint: "[path/to/plan.md] [--prd <path/to/prd.md>] [--angles <traceabili
 
 # Plan Review — Adversarial Fan-out
 
-Attack an implementation plan before any code is written. Parallel `plan-reviewer` agents each take one angle — PRD traceability first, then assumptions, completeness, feasibility, validation — and their findings aggregate into a verdict artifact that feeds `/prp-plan` revision or clears the plan for `/prp-implement`.
+Attack an implementation plan before any code is written. Parallel `prp-core:plan-reviewer` agents each take one angle — PRD traceability first, then assumptions, completeness, feasibility, validation — and their findings aggregate into a verdict artifact that feeds `/prp-plan` revision or clears the plan for `/prp-implement`.
 
 This skill is advisory: it never edits the plan, the PRD, or any code.
 
@@ -63,7 +63,7 @@ At dispatch (Phase 4), prepend this line to every brief (this is scoping, not re
 
 Read `references/agent-prompts.md` now (mandatory) — it is the exact attack brief for every angle.
 
-Launch **every selected angle** in a **single message with multiple Task tool calls**, one `plan-reviewer` agent per angle, each with its brief from the reference filled with the resolved plan path, PRD path, and phase row. Do not serialize: the angles are independent reads of the same artifacts. Run sequentially only if the user explicitly asks.
+Launch **every selected angle** in a **single message with multiple Task tool calls**, one `prp-core:plan-reviewer` agent per angle, each with its brief from the reference filled with the resolved plan path, PRD path, and phase row. Do not serialize: the angles are independent reads of the same artifacts. Run sequentially only if the user explicitly asks.
 
 Wait for all agents to return.
 
