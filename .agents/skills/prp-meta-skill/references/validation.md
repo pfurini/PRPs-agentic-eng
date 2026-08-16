@@ -1,6 +1,6 @@
 # Validation Gates
 
-Run these after creating or refactoring a skill. This is the PRP "validation loop" — fix failures before declaring done.
+Run these after creating, refactoring, or consolidating a skill. This is the PRP "validation loop" — fix failures before declaring done.
 
 ## Gate 1 — Structure
 
@@ -15,16 +15,14 @@ grep -nE '`(references|templates|scripts|assets)/' .agents/skills/<name>/SKILL.m
 
 ## Gate 2 — Description quality (the trigger)
 
-- Third person; not "Use this when you…".
-- States WHAT it does AND WHEN to use it.
-- Contains literal trigger phrases a user would actually say, plus the `/name` invocation.
-- For PRP family: `user-invocable` and `disable-model-invocation` are NOT set (both invocation paths stay open).
+- For active skills: third person; not "Use this when you…"; states WHAT and WHEN; includes literal trigger phrases and the `/name` invocation.
+- `user-invocable` and `disable-model-invocation` are NOT set. For an in-process experiment registered in `IN_PROCESS_SKILLS`, verify it lives in this repository's authored `.claude` skill source tree rather than `.agents/skills/`, its description is only `This is an experimental skill. Never use it unless the user explicitly tells you to invoke /<name>.`, explicit user and agent invocation work, and it is absent from generated distributions and active composition callers.
 
 ## Gate 3 — Body style & size
 
 - Imperative/infinitive voice throughout; no second person ("you should").
 - Body is the decision spine + pointers, not a data dump.
-- Target 1,500–2,000 words; investigate anything over ~5k.
+- Use the smallest complete decision spine; investigate anything approaching ~5k words.
 
 ## Gate 4 — Progressive disclosure
 
@@ -33,11 +31,13 @@ grep -nE '`(references|templates|scripts|assets)/' .agents/skills/<name>/SKILL.m
 - Always-needed output formats have a **mandatory-read** pointer; sometimes-needed detail has a lazy pointer.
 - References are one level deep and all linked from a Resources section.
 
-## Gate 5 — Behavior preservation (refactors only)
+## Gate 5 — Fidelity or intentional redesign
 
-- The trimmed skill + resources drives the SAME process and SAME output as the original.
-- At every point the original used inlined content, the body now reaches the right pointer at the right time.
-- Nothing dropped, nothing duplicated. When uncertain, keep content in the body.
+- For a fidelity refactor, the trimmed skill + resources drives the SAME process and output; every moved block remains reachable at the right time.
+- For consolidation, the new outcome and invariants are explicit; every old input, side effect, publication, gate, correction path, and terminal outcome is either preserved or deliberately retired.
+- Every phase and stateful artifact has one owner. Cross-context handoffs use complete durable artifacts and semantic identity, not lossy summaries or remembered filenames.
+- Human-facing decisions have a verified human-visible publication. Independent review or validation reruns after corrections.
+- All callers and public surfaces use the new owner; removed skills and obsolete artifact contracts are absent after regeneration.
 
 ## Gate 6 — Skill-reviewer agent
 
@@ -57,4 +57,4 @@ Apply its high-confidence findings; ignore noise.
 
 ## Done criteria
 
-All seven gates pass. For a refactor, Gate 5 is non-negotiable: a refactor that changes output is a regression, not a cleanup.
+All seven gates pass. Gate 5 is non-negotiable: fidelity work may not drift, and intentional redesign must prove the replacement contract rather than hiding behavior loss as cleanup.

@@ -2,7 +2,7 @@
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
-The rules every skill obeys, whether being created or refactored. This is the shared "curated context" — keep it here, not duplicated into the workflow files.
+The rules every skill obeys, whether being created, refactored, or consolidated. This is the shared "curated context" — keep it here, not duplicated into the workflow files.
 
 These rules govern the **craft** of a skill (how it's built). They say nothing about a skill's **content** — the sections a plan/PRD/report should contain, the domain vocabulary, the output shape. That is the author's per-project call; there is no canonical template. Be strict on the craft, agnostic on the content.
 
@@ -55,10 +55,10 @@ Choose by ownership and volatility: bundle what you own and want versioned; poin
 | `argument-hint` | no | string | Autocomplete hint, e.g. `<path/to/plan.md> [--base <branch>]` |
 | `allowed-tools` | no | string/list | Tools usable without prompts while active |
 | `model` / `effort` | no | model name / level | Override per-skill execution |
-| `disable-model-invocation` | no | bool | `true` = user-only (no auto-invoke). **Leave off for prp skills** |
+| `disable-model-invocation` | no | bool | `true` = user-only (no agent invocation). Leave off for PRP skills that may be delegated, including in-process experiments. |
 | `user-invocable` | no | bool | `false` = agent-only, hidden from `/`. **Leave off for prp skills** |
 
-For the PRP skill family the default is **both** invocation paths: omit `user-invocable` and `disable-model-invocation`.
+For PRP skills the default is **both** invocation paths: omit `user-invocable` and `disable-model-invocation`. A deliberately in-process experiment stays top-level in this repository's authored `.claude` skill source tree, never the generated `.agents/skills/` tree; it must be registered in `IN_PROCESS_SKILLS` and uses only `This is an experimental skill. Never use it unless the user explicitly tells you to invoke /<name>.` as its description. This keeps explicit agent delegation possible without advertising normal trigger phrases; the experiment remains excluded from generated distributions and composition callers.
 
 Invocation control is a deliberate decision, and it depends on **context**. A personal skill can stay fully open. But a **distributed** skill (shipped in a plugin) that auto-invokes a **side-effecting** action — commits, pushes, opens PRs, deletes — can surprise other people's agents. For those, set `disable-model-invocation: true` (user-only) in the distributed copy while leaving read/plan skills auto-invocable. Match the openness to who runs it and what it does.
 
@@ -69,10 +69,12 @@ The table covers the common fields, not all of them. Other optional fields exist
 Three load levels — design every skill around them:
 
 1. **Metadata** (`name` + `description`) — always in context. ~100 words. This is the trigger budget.
-2. **Body** (`SKILL.md`) — loaded when the skill triggers. Target **1,500–2,000 words**, hard ceiling ~5k. Everything here is paid for on every use.
+2. **Body** (`SKILL.md`) — loaded when the skill triggers. Use the smallest complete decision spine; investigate anything approaching ~5k words. Everything here is paid for on every use.
 3. **Resources** (`references/`, `templates/`, `scripts/`) — loaded only when the agent reaches for them. Effectively unlimited; scripts cost zero context because only their output enters the conversation.
 
 **Implication:** put the decision spine and workflow in the body; put bulky, occasionally-needed, or output-shaped detail in resources.
+
+For a composition workflow, the spine also names phase owners, context boundaries, human gates, and durable handoffs. Compose specialist skills by name instead of duplicating their craft. Preserve rich artifacts across phases; do not replace them with private summaries that discard evidence.
 
 ## Writing style — two distinct voices
 

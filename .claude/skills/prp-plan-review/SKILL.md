@@ -23,7 +23,7 @@ mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "n
 ## Phase 1: RESOLVE — the plan under review
 
 1. If `$ARGUMENTS` contains a path to a `.md` file, use it. Otherwise list `$PRP_DIR/plans/*.plan.md` by modification time and propose the most recent; if several are plausible candidates for "the" plan, ask the user which one — do not guess.
-2. Read the plan **in full**. Note its Metadata, Lifecycle (Back refs), NOT Building, Step-by-Step Tasks, Validation Commands, and Acceptance Criteria sections — the attack briefs reference them. Note the Amendments section too: a disposition table from a prior review there makes this pass a **re-review** (see Re-review passes).
+2. Read the plan **in full**. Note its header metadata, Related Plans, Not building, Implementation tasks, Validation gates, and Acceptance sections — the attack briefs reference them. Note the Amendments section too: a disposition table from a prior review there makes this pass a **re-review** (see Re-review passes).
 3. If the plan does not exist or is empty, stop: `Error: no plan found. Create one first: /prp-plan "<feature>"`.
 
 ## Phase 2: SOURCE — locate the PRD

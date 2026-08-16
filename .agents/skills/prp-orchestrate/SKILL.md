@@ -1,13 +1,13 @@
 ---
 name: prp-orchestrate
-description: Turn the current session into an SDLC orchestrator that coordinates parallel background agents running PRP skills in isolated worktrees - decompose work into workstreams, launch and steer background agents with your harness's delegation tools, hold review gates as the user's proxy, and sequence merges. Use when the user wants to "spawn N agents in separate worktrees", "run prp-issue on these issues in parallel", "orchestrate these features", "act as my orchestrator", "coordinate agents through the PRP pipeline", "ship these issues in parallel", or invokes $prp-orchestrate.
+description: Turn the current session into an SDLC orchestrator that coordinates parallel background agents running PRP skills in isolated worktrees - decompose work into workstreams, launch and steer autonomous deliveries, hold human-only and merge gates as the user's proxy, and sequence merges. Use when the user wants to "spawn N agents in separate worktrees", "run prp-issue on these issues in parallel", "orchestrate these features", "act as my orchestrator", "coordinate agents through the PRP pipeline", "ship these issues in parallel", or invokes $prp-orchestrate.
 ---
 
 > **Arguments:** `$ARGUMENTS` (and `$1`, `$2`, ...) refer to the arguments given when this skill was invoked. Take them from the user's request; if absent, infer them from the conversation.
 
 # PRP Orchestrate
 
-Coordinate multiple PRP workstreams from one session. The orchestrator is the user's proxy: it decomposes the goal, launches background agents that run PRP skills, steers them mid-flight, sits at review gates (deciding autonomously when a standing decision covers it, escalating a digest when it doesn't), and sequences the merges. The run is **live and dynamic** — the user can add work, stop work, redirect an agent, or ask for status at any moment, and the orchestrator absorbs it without restarting anything. The end artifacts are merged PRs plus a run file at `$PRP_DIR/orchestration/<run-id>.md` recording every workstream, decision, and merge.
+Coordinate multiple PRP workstreams from one session. The orchestrator is the user's proxy: it decomposes the goal, launches autonomous `prp-issue` workstream owners, steers them mid-flight, resolves human-only blockers, and sequences reviewed PRs through merge gates. Each workstream owner keeps planning, implementation, and correction in one context while delegating independent review; the outer orchestrator owns the batch, dependencies, and merges. The run is **live and dynamic** — the user can add work, stop work, redirect an agent, or ask for status at any moment, and the orchestrator absorbs it without restarting anything. The end artifacts are merged PRs plus a run file at `$PRP_DIR/orchestration/<run-id>.md` recording every workstream, decision, and merge.
 
 **Input**: $ARGUMENTS (if absent, infer the goal and workstreams from the conversation)
 
@@ -24,23 +24,35 @@ mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "n
 ## Role contract
 
 - **Orchestrate, don't implement.** Never write feature code in the orchestrator session — all product changes happen inside workstream agents. The orchestrator only touches the run file, branches/merges, and the agents themselves.
-- **Drive everything through your harness's delegation tools** — spawn background workstream agents in isolated worktrees (kild rooms via the kild_* tools, or your subagent mechanism), steer a running agent by sending it a follow-up message, stop it and check status with the matching controls. Shelling out to a headless CLI is the fallback lane, not the default (see `references/launching.md` → Detached fallback).
+- **Drive workstreams through your harness's delegation tools** — spawn background workstream agents in isolated workspaces through your subagent mechanism, steer a running agent by sending it a follow-up message, stop it and check status with the matching controls. Never improvise detached CLI processes. Use `prp-loop` only when the user explicitly asks for it.
 - **Trust authoritative signals for "done"**: artifacts under the project's PRP store, agent completion reports, `gh pr view/checks`, git state. An agent saying "done" is a claim; a green PR is a fact.
-- **Where the project has no CI, there is no fact to trust — so the orchestrator re-runs the gate.** Check once per run whether the repo actually has checks (`gh pr checks <n>`; a secret-scanner alone is not a build). If it does not, a workstream's "validations green" is a self-report, and accepting it makes the orchestrator a relay for whatever the agent believed. Run the project's own gate against the branch before marking `pr-open`. Re-run more than once where the suite has known flakes — one green run does not distinguish a fix from a lucky sample.
+- **Each delivery carries its burden of proof.** The outer orchestrator owns the workstream portfolio, but each `prp-issue` owner must return the plan, implementation report, live PR, green validation and CI, complete published review, and `READY TO MERGE` verdict. Verify that evidence; never reconstruct a delivery from its summary or finish its internal correction loop here.
+- **Required CI defines the terminal gate.** Check with `gh pr checks <n> --required`. Pending or failing required checks block acceptance; optional checks remain useful evidence but do not contradict a delivery's terminal state. If the repository has no required CI, a workstream's "validations green" is a self-report, so run the project's own gate against the branch before marking `pr-open`. Re-run more than once where the suite has known flakes — one green run does not distinguish a fix from a lucky sample.
 - **The user is the principal.** Every gate decision is either covered by the Standing Decisions log (act, record it as `auto`) or escalated as a short digest (act on the answer, record it). Never guess on destructive or product-shape decisions.
-- **Compose skills by name only.** Agents are told to "use the prp-issue skill on #123", "use the prp-loop skill for <feature>" — never pointed at another skill's files.
+- **Compose skills by name only.** Agents are told to "use the prp-issue skill on #123" or "use the prp-loop skill for detached execution" — never pointed at another skill's files.
+- **Think in invariants and primitives.** Do not let a workstream inherit a proposed implementation as its objective. Preserve the required observable outcome, look for the smallest existing primitive that can satisfy it, and prove an uncertain architectural hinge before allowing substantial new machinery.
 
 ## Phase 1 — Intake & decompose
 
 1. Establish the goal and enumerate workstreams: GitHub issues, PRD phases, features, or PRs to review. One workstream = one agent = one branch = one PR.
 2. Pick each workstream's engine:
-   - Issue → `prp-issue` (investigate, then fix)
-   - Feature with an existing plan → `prp-implement` (+ `prp-pr`)
-   - Feature from a description → `prp-loop`, or staged `prp-plan` → gate → `prp-implement` when the user should see plans before code
+   - Issue, existing plan, PRD, document, or description going to a reviewed PR → `prp-issue`
+   - Explicit user request for detached, resumable execution or `prp-loop` → `prp-loop`; never select it merely because work may outlive this session
+   - Plan only → `prp-plan`; implementation without review → `prp-implement`
    - Review-only → `prp-review` (worktree — it runs `gh pr checkout`); research-only → `prp-codebase-question` (plain background agent)
    - **Feasibility unknown** — "can this be built here", "what would it cost to allow it" → `prp-spike` (worktree). It ends in a verdict, not a PR; what it gates is whether the downstream workstreams should exist at all, so schedule it *before* the work it informs
 3. Map dependencies and conflict risk: predict the files each workstream touches. Disjoint → parallel; overlapping → serialize or merge into one workstream.
-4. Size the batch. Default `--max-parallel 3`; raise only when workstreams are provably disjoint. More parallel agents = more merge surface and more gates.
+4. Set the run's configured `max-parallel` to the user's explicit value, or **10** by default. It counts active delivery owners and has no separate PRP hard cap; the user may change it at any time. Separately pace launches against dependencies, conflict risk, and current harness capacity. Every delivery owner must retain room for its fresh stage coordinator and at least one sequential leaf specialist, so when capacity is known the effective launch limit is `min(max-parallel, floor((capacity - 1) / 3))` with a minimum supported capacity of four; when capacity is unknown, start one owner while keeping the configured value unchanged. A lower effective limit never rewrites or rejects the user's configured maximum.
+
+Before approving a plan or implementation shape that adds a subsystem, policy layer, state store, staging area, or lifecycle, probe the owning agent in its existing context:
+
+- What invariant requires this?
+- Which existing primitive comes closest?
+- What unproven assumption rules out configuration, composition, prompting, or a smaller extension?
+- What is the cheapest credible experiment that could disprove that assumption?
+- What machinery disappears if the simpler mechanism works?
+
+When those answers can change the architecture, tell the agent to use `prp-spike` before dependent work proceeds. The orchestrator routes and enforces this reasoning; the planning or implementation agent owns the investigation.
 
 **CHECKPOINT — the first gate.** Present the run plan as a table (workstream, engine, dependencies, parallel group) plus proposed standing decisions. Do not launch until the user approves. Approval of the plan is approval of the batch — individual launches don't re-ask.
 
@@ -65,7 +77,7 @@ Launch each workstream as a **background agent** via your delegation tool — se
 
 - **Worktree isolation is the default** — every workstream that touches the working tree gets its own checkout. The test is *"does it touch the working tree"*, not *"does it open a PR"*: `prp-review` looks read-only but runs `gh pr checkout`, so it gets a worktree too.
 - **PR-producing work** → background agent, worktree-isolated: the agent creates its branch, commits, pushes, opens the PR.
-- **Store-only work** — reads files and writes to the PRP store (`prp-codebase-question`, `prp-debug`, `prp-plan`, `prp-prd`) → plain background agents, several in one message so they run concurrently.
+- **Read-only working-tree work** — does not modify the checkout (`prp-codebase-question`, `prp-debug`, `prp-plan`, `prp-prd`) → plain background agents. `prp-debug` may publish to GitHub, so give each issue one owning workstream and do not race multiple debuggers against it.
 - Record each agent's ID/name and workstream row in the run file at launch. Respect `--max-parallel`: queue the rest, launch as slots free.
 
 Prompts must be self-sufficient (agents inherit nothing from this conversation) and must end with the escalation rule: *if blocked on a decision only a human can make, stop and report the blocker* — the orchestrator relays it to a gate and resumes the same agent via a follow-up message with the answer, context intact.
@@ -74,10 +86,11 @@ Prompts must be self-sufficient (agents inherit nothing from this conversation) 
 
 Monitoring is **event-driven, not polled**: background agents notify on completion, and their final report returns to the orchestrator. Between events, stay responsive to the user — this phase is a loop of reacting to whichever arrives first:
 
-**On agent completion**: verify the claim against authority (PR exists? checks green? artifacts written?), update the workstream row and Event Log, then launch the next queued workstream into the freed slot. A "blocked" report → gate it (Phase 5), then message the decision back to the same agent to continue.
+**On agent completion**: verify the claim against authority (PR exists? required checks green, or local gate recorded when none? artifacts written? full review report published with `READY TO MERGE`?), update the workstream row and Event Log, then launch the next queued workstream into the freed slot. An intermediate review report is progress inside `prp-issue`, not completion. A genuine human-only blocker → gate it (Phase 5), then message the decision back to the same agent to continue.
 
 **On user input at any time** — the run absorbs it live:
 - *"also do X, Y"* → run Phase 1 on the additions only (overlap-check against running workstreams), append rows, launch or queue.
+- *"set the parallel limit to N"* / *"up the parallel limit to N"* → update the run file's configured `Max parallel` immediately, recompute the effective launch limit, and launch eligible queued work up to it. If the harness rejects a spawn, keep that work pending and retry when capacity frees; do not refuse or roll back the requested value.
 - *"stop workstream N"* / *"stop everything"* → stop the task(s), record status `dropped` + reason; the worktree/branch survive for later.
 - *"tell agent N to …"* → send a message to that agent; log the instruction in the Event Log.
 - *"status?"* → answer from the run file + task list; reconcile against `gh pr list` if stale.
@@ -87,7 +100,7 @@ Monitoring is **event-driven, not polled**: background agents notify on completi
 
 ## Phase 5 — Gates
 
-Gate points: after plans land (staged pipelines), when a PR opens, before every merge, on every "blocked" report, and on any destructive or ambiguous call.
+Gate points: after plans land in deliberately staged pipelines, before every merge, on genuine human-only blockers, and on any destructive or ambiguous call. Autonomous `prp-issue` workstreams publish every review for visibility but resolve review findings internally until `READY TO MERGE` and CI is green; do not turn those reports into outer-orchestrator gates.
 
 1. Check the Standing Decisions log. Covered within scope → act, record `auto: <action> per SD-<n>` in the Event Log.
 2. Not covered → escalate a **digest**, not a dump: what happened (2–3 lines), what needs deciding, the recommendation and its risk. Group simultaneous gates into one message.
@@ -100,23 +113,24 @@ Hard rules regardless of standing decisions: never merge to a protected branch w
 When PRs are green and gate-approved:
 
 1. Build the merge queue: dependency edges first, then ascending conflict risk — pairwise overlap of `gh pr diff <n> --name-only`; overlapping pairs merge farthest apart.
-2. Merge strictly one at a time. After each merge, bring remaining branches onto the new base — prefer messaging the owning agent ("rebase onto <base>, resolve, re-run validations, push") so its context handles the conflicts; rebase directly only for trivial cases. Re-check `gh pr checks` before the next merge.
-3. Conflicts: mechanical → the owning agent resolves and revalidates; semantic (both sides changed the same behavior) → gate it with both diffs summarized.
+2. Merge strictly one at a time. After each merge, verify its GitHub merge commit is reachable from `origin/<base>`, update the run file, then clean that workstream's checkout and exact PR-head branches immediately (`references/launching.md` → Cleanup after each merge). Never force checkout cleanup; preserve and report dirty state or changed branch tips.
+3. Bring remaining branches onto the new base — prefer messaging the owning agent ("rebase onto <base>, resolve, re-run validations, push") so its context handles the conflicts; rebase directly only for trivial cases. Re-check `gh pr checks <n> --required` before the next merge, or rerun the local gate when no required checks exist.
+4. Conflicts: mechanical → the owning agent resolves and revalidates; semantic (both sides changed the same behavior) → gate it with both diffs summarized.
 
 ## Phase 7 — Close out
 
 1. All workstreams merged, dropped, or handed back → set run status `complete` with a final outcomes table.
-2. Clean up remaining worktrees/branches only after verifying merges (`references/launching.md` → Cleanup). Keep the run file — it is the record.
+2. Reconcile any worktrees or branches that could not be cleaned after their merge (`references/launching.md` → Cleanup after each merge). Keep the run file — it is the record.
 3. Summarize: what shipped (PR links), what was dropped and why, standing decisions worth promoting into CLAUDE.md or memory.
 
 ## Gotchas
 
 - Worktree-isolated agents each resolve the same project PRP store. Workstream artifacts (plans, reports) are shared there across worktrees without merging anything. The **run file lives in the project's store** and is never committed by a workstream.
 - A follow-up message continues an agent **with its context intact** — always prefer that over spawning a fresh agent to "fix" a live workstream; a fresh agent has none of the history.
-- Agents and tasks die with the orchestrator session. For work that must survive it (overnight runs, other harnesses), use the detached fallback lane in `references/launching.md` — same protocol, headless CLI, artifacts as truth.
+- Agents and tasks die with the orchestrator session. Preserve branches, PRs, and PRP artifacts for recovery; never assemble a raw detached CLI launch or switch to `prp-loop` unless the user explicitly requested it.
 - Hooks are the observability extension point (e.g. notify or log on subagent stop); wire them per-project if the run file + notifications aren't enough — not required for the skill to work.
 
 ## Resources
 
-- `references/launching.md` — launch call shapes, the workstream prompt template, steering/stop/status patterns, the detached headless fallback, cleanup. Read before the first launch of a run.
+- `references/launching.md` — launch call shapes, the workstream prompt template, steering/stop/status patterns, harness-aware isolation, and post-merge cleanup. Read before the first launch of a run.
 - `templates/orchestration-run.md` — the run-file format. Read before creating the run file; follow it exactly.
