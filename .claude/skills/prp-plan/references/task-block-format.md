@@ -8,14 +8,18 @@ Each task is a bullet list under a `### `[ ]` Task N: {ACTION} `{file}`` header.
 
 - **ACTION** — what to do to the file (CREATE / UPDATE / ADD ...)
 - **IMPLEMENT** — the specific content to implement (functions, columns, schemas)
-- **MIRROR** — `file:line` of the existing codebase pattern to copy exactly
-- **IMPORTS** — exact import statements the new code needs
+- **MIRROR** — the existing codebase pattern to copy exactly, anchored on its enclosing symbol plus `file:line` (symbol names survive line drift)
+- **IMPORTS** — exact import statements the new code needs, each path resolved against the actual tree (a wrong relative depth fails compilation)
 - **TYPES** — type definitions or inference patterns to use
 - **PATTERN** — the design pattern or structural rule to follow
 - **GOTCHA** — known issue to avoid, discovered in Phase 2/3 research
 - **VALIDATE** — executable command proving the task is done
 
 Every task MUST have at least MIRROR (or PATTERN) and VALIDATE. GOTCHA entries come from real research findings, not invented warnings.
+
+## Altitude
+
+A task pins WHAT must hold, not HOW to build it: the invariant, the seam to touch (verified symbol + `file:line`), and the falsifying test. The implementer designs the mechanism against real code — they have the compiler and the test suite; the plan has neither, so every mechanism the plan scripts in prose (branching logic, buffer or flush lifecycles, private helper bodies) is unverified code that reviews must attack and that drifts stale. Reserve mechanism internals for designs several components must agree on, and verify every seam and pattern such a design cites in source first.
 
 ## Worked example sequence
 

@@ -4,7 +4,7 @@ The exact prompt text for every subagent launch in Phases 2, 3, and 5. Fill the 
 
 ## Phase 2 — codebase-explorer prompt
 
-Use Task tool with `subagent_type="prp-core:codebase-explorer"`:
+Use Task tool with `subagent_type="codebase-explorer"`:
 
 ```
 Find all code relevant to implementing: [feature description].
@@ -25,7 +25,7 @@ Return ACTUAL code snippets from codebase, not generic examples.
 
 ## Phase 2 — codebase-analyst prompt
 
-Use Task tool with `subagent_type="prp-core:codebase-analyst"`:
+Use Task tool with `subagent_type="codebase-analyst"`:
 
 ```
 Analyze the implementation details relevant to: [feature description].
@@ -36,13 +36,15 @@ TRACE:
 3. State changes - side effects in related functions
 4. Contracts - interfaces and expectations between components
 5. Patterns in use - design patterns and architectural decisions
+6. Execution timing - for each seam the feature will hook, when it runs relative to: initial entry, queued/deferred delivery, retry, error/abort, teardown (cite the call order with file:line)
+7. Surface enumeration - every surface that reads or exposes the state being changed (all enumerators, caches, mirrors, public listings)
 
 Document what exists with precise file:line references. No suggestions or improvements.
 ```
 
 ## Phase 3 — web-researcher prompt
 
-Use Task tool with `subagent_type="prp-core:web-researcher"`:
+Use Task tool with `subagent_type="web-researcher"`:
 
 ```
 Research external documentation relevant to implementing: [feature description].
@@ -66,7 +68,7 @@ Return findings with:
 
 ## Phase 5 — architecture deep-dive prompt
 
-Use Task tool with `subagent_type="prp-core:codebase-analyst"`:
+Use Task tool with `subagent_type="codebase-analyst"`:
 
 ```
 Analyze the architecture around these integration points for: [feature description].
@@ -80,6 +82,7 @@ ANALYZE:
 2. What contracts exist between components
 3. What side effects occur at each stage
 4. What error handling patterns are in place
+5. When each integration point executes relative to queued/deferred paths, retries, aborts, and teardown - cite the call order
 
 Document what exists with precise file:line references. No suggestions.
 ```
